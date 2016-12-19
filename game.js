@@ -1,135 +1,133 @@
 var readline = require('readline');
 
-console.log('Game of Life');
+/**
+ * NOTE: state is now an integer, meaning:
+ * 0: dead cell, was also dead in previous generation
+ * 1: alive cell, was also alive in previous generation
+ * 2: has just died, i.e. is dead now, but was alive in previous generation
+ * 3: has just come alive, i.e. is alive now, but was dead in previous generation
+ */
+const CELL_STATE_DEAD = 0;
+const CELL_STATE_ALIVE = 1;
+const CELL_STATE_JUST_DIED = 2;
+const CELL_STATE_JUST_CAME_ALIVE = 3;
 
+module.exports = {
 
-function nextState(currentState, neighbourCount) {
+    // checks whether given state is alive or not
+    isAlive: function(state) {
 
-    if (currentState === false) {
+        return ((state === CELL_STATE_ALIVE) || (state === CELL_STATE_JUST_CAME_ALIVE));
+    },
 
-        return (neighbourCount === 3);
-    }
-    else {
+    // implements game of life rules
+    nextState: function(currentState, neighbourCount) {
 
-        return (neighbourCount === 2) || (neighbourCount === 3);
-    }
-}
+        // if cell is alive...
+        if (module.exports.isAlive(currentState)) {
 
-function calculateGrid(grid) {
-
-    var currentState = grid[1][1];
-
-    var flattenedGrid = grid.reduce(function(a, b) {
-
-        return a.concat(b);
-
-    }, []);
-    var neighbourCount = flattenedGrid.reduce(function(a, b) {
-
-        return b? a + 1: a;
-
-    }, 0);
-
-    if (currentState === true) {
-
-        neighbourCount -= 1;
-    }
-
-    return nextState(currentState, neighbourCount);
-}
-
-function printBoard(board) {
-
-    for (var x = 0; x < board.length; x += 1) {
-
-        var line = board[x];
-        var s = '';
-
-        for (var y = 0; y < line.length; y += 1) {
-
-            s = s + ((line[y] === true)? 'X': '.');
-         }
-        console.log(s);
-    }
-    readline.moveCursor(process.stdout, 0, -board.length);
-}
-
-function nextBoard(initialBoard) {
-
-    var height = initialBoard.length;
-    var width = initialBoard[0].length;
-
-    var nextBoard = [];
-
-    for (var x = 0; x < height; x += 1) {
-
-        nextBoard[x] = [];
-
-        for (var y = 0; y < width; y += 1) {
-
-            var xBefore = (x === 0)? height - 1: x - 1;
-            var xAfter = (x === (height - 1))? 0: x + 1;
-
-            var yBefore = (y === 0)? width - 1: y - 1;
-            var yAfter = (y === (width - 1))? 0: y + 1;
-
-            nextBoard[x][y] = calculateGrid([
-                [initialBoard[xBefore][yBefore], initialBoard[xBefore][y], initialBoard[xBefore][yAfter]],
-                [initialBoard[x][yBefore], initialBoard[x][y], initialBoard[x][yAfter]],
-                [initialBoard[xAfter][yBefore], initialBoard[xAfter][y], initialBoard[xAfter][yAfter]]
-            ]);
+            return ((neighbourCount === 2) || (neighbourCount === 3))? CELL_STATE_ALIVE: CELL_STATE_JUST_DIED;
         }
+        // ... else, cell is dead
+        else {
+
+            return (neighbourCount === 3)? CELL_STATE_JUST_CAME_ALIVE: CELL_STATE_DEAD;
+        }
+    },
+
+    // counts elements in an array that contain alive cells
+    countLivingCells: function(cells) {
+
+        return cells.filter(function(a) {
+
+            return module.exports.isAlive(a);
+
+        }).length;
+    },
+
+    // prints out complete board
+    printBoard: function(board, index) {
+
+        console.log('Round: ' + index);
+
+        board.forEach(function(line) {
+
+            var s = '';
+            line.forEach(function(state) {
+
+                var c = module.exports.isAlive(state)? '\u2588\u258a': '\u2591\u2591';
+
+                // change color for cells that have just died or have just come alive
+                if ((state === CELL_STATE_JUST_DIED) || (state === CELL_STATE_JUST_CAME_ALIVE)) {
+
+                    c = '\x1b[36m' + c + '\x1b[0m';
+                }
+                s += c;
+            });
+            console.log(s);
+        });
+
+        readline.moveCursor(process.stdout, 0, -(board.length + 1));
+    },
+
+    // return new board with next generation
+    tick: function(board) {
+
+        var height = board.length;
+
+        return board.map(function(line, x) {
+
+            var width = line.length;
+
+            return line.map(function(state, y) {
+
+                // wrap neighbour cells around all edges of board
+                var xBefore = (x === 0)? height - 1: x - 1;
+                var xAfter = (x === (height - 1))? 0: x + 1;
+
+                var yBefore = (y === 0)? width - 1: y - 1;
+                var yAfter = (y === (width - 1))? 0: y + 1;
+
+                return module.exports.nextState(state, module.exports.countLivingCells([
+
+                    board[xBefore][yBefore], board[xBefore][y], board[xBefore][yAfter],
+                    board[x][yBefore], board[x][yAfter],
+                    board[xAfter][yBefore], board[xAfter][y], board[xAfter][yAfter]
+                ]));
+            });
+        });
+    },
+
+    // create initial board
+    init: function(height, width, offsetX, offsetY, seedBoard) {
+
+        return Array.from({length: height}, function(v, x) {
+
+            return Array.from({length: width}, function(v, y) {
+
+                // if within seed board, copy it in
+                var seedX = x - offsetX;
+                var seedY = y - offsetY;
+                if ((seedX >= 0) && (seedX < seedBoard.length) && (seedY >= 0) && (seedY < seedBoard[seedX].length)) {
+
+                    return (seedBoard[seedX].charAt(seedY) !== '.')? CELL_STATE_ALIVE: CELL_STATE_DEAD;
+                }
+
+                // else, leave cell empty
+                return CELL_STATE_DEAD;
+            });
+        });
+    },
+
+    // main game loop
+    loop: function(board, index, duration) {
+
+        module.exports.printBoard(board, index);
+
+        setTimeout(function() {
+
+            module.exports.loop(module.exports.tick(board), index + 1, duration);
+
+        }, duration);
     }
-
-    return nextBoard;
-}
-
-var bigBoard = [];
-var height = 35;
-var width = 127;
-
-for (var x = 0; x < height; x += 1) {
-
-    bigBoard[x] = [];
-
-    for (var y = 0; y < width; y += 1) {
-
-        bigBoard[x][y] = false;
-    }
-}
-
-
-var initialBoard = [
-    [false, false, false, false, false, false, false, false, false, false],
-    [true, true, true, false, false, false, false, false, false, false],
-    [false, false, false, false, false, false, false, false, false, false],
-    [false, false, false, false, false, false, false, false, false, false],
-    [false, false, false, true, true, true, false, false, false, false],
-    [false, false, false, true, false, false, false, true, true, false],
-    [false, false, true, true, false, false, false, false, false, false],
-    [false, false, false, false, false, false, false, true, true, true],
-    [false, false, false, false, false, false, true, true, true, false],
-    [false, false, false, false, false, false, false, false, false, false]
-];
-
-for (var x = 0; x < initialBoard.length; x += 1) {
-
-    for (var y = 0; y < initialBoard[0].length; y += 1) {
-
-        bigBoard[x + 10][y + 35] = initialBoard[x][y];
-    }
-}
-
-
-
-function gameLoop(board) {
-
-    printBoard(board);
-
-    setTimeout(function() {
-
-        gameLoop(nextBoard(board));
-    }, 1000);
-}
-
-gameLoop(bigBoard);
+};
